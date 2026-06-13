@@ -20,7 +20,7 @@ This project showcases a modern DevOps pipeline that automates the complete soft
 
 ## 🏗️ Architecture
 
-![DevOps Architecture](docs/images/devops-architecture.jpeg)
+![DevOps Architecture](docs/images/devops-architecture.png)
 
 ### Architecture Flow
 
