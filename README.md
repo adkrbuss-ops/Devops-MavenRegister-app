@@ -20,14 +20,7 @@ This project showcases a modern DevOps pipeline that automates the complete soft
 
 ## 🏗️ Architecture
 
-> **Insert Deployment Flow Diagram Here**
-
-```text
-📍 Replace this section with your architecture/flow diagram image
-
-Example:
-docs/images/devops-architecture.png
-```
+![DevOps Architecture](docs/images/devops-architecture.jpeg)
 
 ### Architecture Flow
 
