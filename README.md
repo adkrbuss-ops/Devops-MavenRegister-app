@@ -116,190 +116,260 @@ ssh-keygen -t ed25519
 
 ---
 
-# 🔍 SonarQube Setup
+# SonarQube Setup with Docker on AWS EC2 (Ubuntu)
 
-## Update Packages
+## Prerequisites
 
-```bash
-sudo apt update
-sudo apt upgrade
-```
+* Ubuntu EC2 Instance (Recommended: t3.large or higher)
+* Security Group allowing:
 
-## Install PostgreSQL
+  * SSH (22)
+  * SonarQube (9000)
 
-### Add PostgreSQL Repository
+---
 
-```bash
-sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
-
-wget -qO- https://www.postgresql.org/media/keys/ACCC4CF8.asc \
-| sudo tee /etc/apt/trusted.gpg.d/pgdg.asc &>/dev/null
-```
-
-### Install PostgreSQL
+## Step 1: Update the Server
 
 ```bash
-sudo apt update
-sudo apt-get -y install postgresql postgresql-contrib
-sudo systemctl enable postgresql
-```
-
-### Create SonarQube Database
-
-```bash
-sudo passwd postgres
-su - postgres
-
-createuser sonar
-psql
-
-ALTER USER sonar WITH ENCRYPTED password 'sonar';
-CREATE DATABASE sonarqube OWNER sonar;
-GRANT ALL PRIVILEGES ON DATABASE sonarqube TO sonar;
-
-\q
-exit
+sudo apt update && sudo apt upgrade -y
 ```
 
 ---
 
-## Install Java 17 (Temurin)
+## Step 2: Install Docker
+
+Install Docker:
 
 ```bash
-wget -O - https://packages.adoptium.net/artifactory/api/gpg/key/public \
-| sudo tee /etc/apt/keyrings/adoptium.asc
+sudo apt install docker.io -y
+```
 
-echo "deb [signed-by=/etc/apt/keyrings/adoptium.asc] \
-https://packages.adoptium.net/artifactory/deb \
-$(awk -F= '/^VERSION_CODENAME/{print$2}' /etc/os-release) main" \
-| sudo tee /etc/apt/sources.list.d/adoptium.list
+Enable and start the Docker service:
 
-sudo apt update
-sudo apt install temurin-17-jdk
+```bash
+sudo systemctl enable docker
+sudo systemctl start docker
+```
+
+Add the current user to the Docker group:
+
+```bash
+sudo usermod -aG docker $USER
+newgrp docker
+```
+
+Verify Docker installation:
+
+```bash
+docker --version
+```
+
+Expected Output:
+
+```bash
+Docker version XX.X.X, build XXXXXXX
 ```
 
 ---
 
-## Linux Kernel Tuning
+## Step 3: Configure Linux Kernel Settings
 
-### Increase File Limits
+SonarQube uses Elasticsearch internally, which requires specific kernel parameters.
 
-```bash
-sudo vim /etc/security/limits.conf
-```
-
-Add:
-
-```text
-sonarqube - nofile 65536
-sonarqube - nproc 4096
-```
-
-### Increase Memory Mapping
+Check current values:
 
 ```bash
-sudo vim /etc/sysctl.conf
+sysctl vm.max_map_count
+sysctl fs.file-max
+ulimit -n
+ulimit -u
 ```
 
-Add:
-
-```text
-vm.max_map_count=262144
-```
-
-Apply:
+Update the required settings:
 
 ```bash
+sudo sysctl -w vm.max_map_count=524288
+sudo sysctl -w fs.file-max=131072
+```
+
+Make the changes persistent across reboots:
+
+```bash
+echo "vm.max_map_count=524288" | sudo tee -a /etc/sysctl.conf
+
+echo "fs.file-max=131072" | sudo tee -a /etc/sysctl.conf
+
 sudo sysctl -p
 ```
 
----
-
-## Install SonarQube
+Verify:
 
 ```bash
-wget https://binaries.sonarsource.com/Distribution/sonarqube/sonarqube-9.9.0.65466.zip
-
-sudo apt install unzip
-sudo unzip sonarqube-9.9.0.65466.zip -d /opt
-
-sudo mv /opt/sonarqube-9.9.0.65466 /opt/sonarqube
-```
-
-### Create Sonar User
-
-```bash
-sudo groupadd sonar
-
-sudo useradd \
--c "user to run SonarQube" \
--d /opt/sonarqube \
--g sonar sonar
-
-sudo chown sonar:sonar /opt/sonarqube -R
-```
-
-### Configure Database Connection
-
-Edit:
-
-```bash
-sudo vim /opt/sonarqube/conf/sonar.properties
-```
-
-```properties
-sonar.jdbc.username=sonar
-sonar.jdbc.password=sonar
-sonar.jdbc.url=jdbc:postgresql://localhost:5432/sonarqube
+sysctl vm.max_map_count
+sysctl fs.file-max
 ```
 
 ---
 
-## Configure SonarQube Service
+## Step 4: Pull and Run SonarQube Container
 
-Create:
+Pull the latest SonarQube Community Edition image:
 
 ```bash
-sudo vim /etc/systemd/system/sonar.service
+docker pull sonarqube:community
 ```
 
-```ini
-[Unit]
-Description=SonarQube Service
-After=syslog.target network.target
+Start the container:
 
-[Service]
-Type=forking
+```bash
+docker run -d \
+  --name sonarqube \
+  -p 9000:9000 \
+  sonarqube:community
+```
 
-ExecStart=/opt/sonarqube/bin/linux-x86-64/sonar.sh start
-ExecStop=/opt/sonarqube/bin/linux-x86-64/sonar.sh stop
+Verify that the container is running:
 
-User=sonar
-Group=sonar
+```bash
+docker ps
+```
 
-Restart=always
+---
 
-LimitNOFILE=65536
-LimitNPROC=4096
+## Step 5: Monitor SonarQube Startup Logs
 
-[Install]
-WantedBy=multi-user.target
+Check container logs:
+
+```bash
+docker logs -f sonarqube
+```
+
+Wait until the following message appears:
+
+```text
+SonarQube is operational
+```
+
+This may take a few minutes during the first startup.
+
+---
+
+## Step 6: Access SonarQube
+
+Open your browser and navigate to:
+
+```text
+http://<EC2-PUBLIC-IP>:9000
+```
+
+Example:
+
+```text
+http://13.233.XXX.XXX:9000
+```
+
+---
+
+## Default Login Credentials
+
+```text
+Username: admin
+Password: admin
+```
+
+You will be prompted to change the password after the first login.
+
+---
+
+## Useful Docker Commands
+
+### View Running Containers
+
+```bash
+docker ps
+```
+
+### Stop SonarQube
+
+```bash
+docker stop sonarqube
 ```
 
 ### Start SonarQube
 
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl start sonar
-sudo systemctl enable sonar
-sudo systemctl status sonar
+docker start sonarqube
 ```
 
-### Monitor Logs
+### Restart SonarQube
 
 ```bash
-sudo tail -f /opt/sonarqube/logs/sonar.log
+docker restart sonarqube
 ```
+
+### View Logs
+
+```bash
+docker logs -f sonarqube
+```
+
+### Remove Container
+
+```bash
+docker rm -f sonarqube
+```
+
+---
+
+## Troubleshooting
+
+### Error: vm.max_map_count is too low
+
+```text
+max virtual memory areas vm.max_map_count [65530] is too low
+```
+
+Fix:
+
+```bash
+sudo sysctl -w vm.max_map_count=524288
+sudo sysctl -p
+```
+
+### SonarQube Not Accessible
+
+Verify:
+
+```bash
+docker ps
+```
+
+Check EC2 Security Group:
+
+* Port 22 (SSH)
+* Port 9000 (Custom TCP)
+
+Both should be allowed from your IP or 0.0.0.0/0 as required.
+
+---
+
+## Verification
+
+Check SonarQube status:
+
+```bash
+curl http://localhost:9000/api/system/status
+```
+
+Expected Output:
+
+```json
+{
+  "status":"UP"
+}
+```
+
+🎉 SonarQube is now successfully deployed and running on your AWS EC2 instance using Docker.
 
 ---
 
